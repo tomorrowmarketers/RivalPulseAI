@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ── Design System: Linear-inspired (Dark Mode Native) ──────────────────────
+ * RivalPulseAI uses dark-mode as the native surface, matching the
+ * original design system specification in Design System Inspired by Linear.md
+ */
+
+:root {
+  --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  :root {
+    /* — Surface luminance steps (light) — */
+    --surface-0: 255 255 255;         /* #ffffff — page background */
+    --surface-1: 248 249 250;         /* #f8f9fa — panels, sidebar */
+    --surface-2: 241 242 244;         /* #f1f2f4 — hover / subtle fill */
+    --surface-3: 229 231 235;         /* #e5e7eb — stronger fill */
+    --surface-inverse: 15 16 17;      /* #0f1011 — for inverted contexts */
+
+    --overlay: 0 0 0;
+
+    /* — Text hierarchy (light) — */
+    --text-primary: 15 16 17;         /* #0f1011 — near black */
+    --text-secondary: 52 55 65;       /* #343741 — dark gray */
+    --text-tertiary: 107 114 128;     /* #6b7280 — medium gray */
+    --text-quaternary: 156 163 175;   /* #9ca3af — muted gray */
+    --text-on-brand: 255 255 255;
+
+    /* — Brand & accent (unchanged) — */
+    --brand: 94 106 210;              /* #5e6ad2 */
+    --brand-hover: 79 91 196;         /* slightly darker for light bg hover */
+    --brand-active: 67 77 172;        /* active state on light bg */
+    --brand-soft: 238 239 252;        /* light indigo tint */
+
+    /* — Status (unchanged) — */
+    --success: 22 163 74;             /* green-600 */
+    --success-soft: 16 185 129;       /* emerald-500 */
+    --warning: 217 119 6;             /* amber-600 */
+    --danger: 220 38 38;              /* red-600 */
+    --info: 37 99 235;                /* blue-600 */
+
+    /* — Borders (light) — */
+    --border-subtle: 0 0 0;           /* use with /8 alpha → rgba(0,0,0,0.08) */
+    --border-standard: 0 0 0;         /* use with /12 alpha */
+    --border-strong: 208 214 224;     /* #d0d6e0 solid — toolbar, buttons */
+    --border-line: 230 230 230;       /* #e6e6e6 solid — card / panel viền chính */
+
+    /* — shadcn/radix compat (light) — */
+    --background: 0 0% 100%;
+    --foreground: 220 13% 6%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 6%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 6%;
+    --primary: 234 55% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 13% 6%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 234 55% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 234 55% 60%;
+    --radius: 0.375rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: var(--font-inter), 'SF Pro Display', -apple-system, system-ui,
+      'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    font-feature-settings: 'cv01', 'ss03';
+    font-variant-ligatures: common-ligatures;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
+
+  body {
+    background-color: rgb(var(--surface-0));
+    color: rgb(var(--text-primary));
+    font-weight: 400;
+    letter-spacing: -0.003em;
+  }
+
+  code, kbd, samp, pre {
+    font-family: var(--font-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  h1 { letter-spacing: -0.022em; }
+  h2 { letter-spacing: -0.012em; }
+  h3 { letter-spacing: -0.012em; }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--brand));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: rgb(var(--brand) / 0.18);
+    color: rgb(var(--text-primary));
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--text-quaternary) / 0.35);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--text-quaternary) / 0.6);
+  }
+}
+
+@layer utilities {
+  /* Linear signature weights */
+  .font-emphasis { font-weight: 510; }
+  .font-strong   { font-weight: 590; }
+
+  /* Shadow helpers */
+  .shadow-linear-sm {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 1px 1px rgb(0 0 0 / 0.04);
+  }
+  .shadow-linear {
+    box-shadow: 0 2px 4px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04),
+                0 0 0 1px rgb(0 0 0 / 0.05);
+  }
+  .shadow-linear-lg {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.08), 0 2px 6px rgb(0 0 0 / 0.05),
+                0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+  .shadow-linear-popover {
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.05),
+                0 8px 24px rgb(0 0 0 / 0.09);
+  }
+  .shadow-focus-brand {
+    box-shadow: 0 0 0 3px rgb(var(--brand) / 0.18);
+  }
+}

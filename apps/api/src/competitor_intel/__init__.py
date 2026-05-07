@@ -1,0 +1,1 @@
+"""RivalPulse Competitor Intelligence miniapp."""

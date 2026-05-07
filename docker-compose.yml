@@ -1,0 +1,101 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: rivalpulse-ci-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rivalpulse_ci}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-rivalpulse_ci}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  init:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: rivalpulse-ci-init
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://app:app@db:5432/rivalpulse_ci}
+      PYTHONPATH: /app/src
+    command: ["python", "-m", "competitor_intel.cli", "bootstrap"]
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: rivalpulse-ci-api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://app:app@db:5432/rivalpulse_ci}
+      PYTHONPATH: /app/src
+    command: ["uvicorn", "competitor_intel.main:app", "--host", "0.0.0.0", "--port", "8410"]
+    ports:
+      - "${API_PORT:-8410}:8410"
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: rivalpulse-ci-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://app:app@db:5432/rivalpulse_ci}
+      PYTHONPATH: /app/src
+      # Report schedule (set in .env)
+      REPORT_CADENCE_DAYS: ${REPORT_CADENCE_DAYS:-14}
+      AUTO_REPORT_ENABLED: ${AUTO_REPORT_ENABLED:-true}
+      # Email delivery (set in .env to enable)
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-reports@rivalpulse.local}
+      REPORT_EMAIL_RECIPIENTS: ${REPORT_EMAIL_RECIPIENTS:-}
+    command: ["python", "-m", "competitor_intel.worker"]
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./apps/web
+    container_name: rivalpulse-ci-web
+    ports:
+      - "${WEB_PORT:-3410}:3000"
+    environment:
+      INTERNAL_API_URL: http://api:8410
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  app_data:

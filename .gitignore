@@ -1,0 +1,53 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Runtime data and generated artifacts
+data/
+postgres_data/
+app_data/
+.artifacts/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / Next.js
+node_modules/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+apps/web/dist/
+apps/web/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Test, demo, and local helper material
+docs/
+apps/api/tests/
+body*.json
+apps/web/body*.json
+apps/web/report_test.txt
+*_test.*
+*_demo.*
+*.new
+*.bak
+*.tmp
+write_*.py
+_rewrite_reports.py
+Design System Inspired by Linear.md
