@@ -82,6 +82,10 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     }),
+  deleteSource: (sourceId: string) =>
+    request<{ deleted: boolean; id: string }>(`/api/sources/${sourceId}`, {
+      method: 'DELETE',
+    }),
   discoverSources: (payload: { seed_url: string; include_pattern?: string }) =>
     request<{ seed_url: string; discovered: { url: string; text: string }[]; count: number }>(
       '/api/sources/discover',

@@ -127,7 +127,7 @@ export function Sidebar() {
                       <>
                         <span className="text-caption font-emphasis truncate flex-1">{item.label}</span>
                         {item.badge ? (
-                          <span className="flex-shrink-0 rounded-full bg-warning/15 border border-warning/30 px-1.5 text-tiny font-strong text-warning">
+                          <span className="flex-shrink-0 rounded-full bg-warning/15 border border-warning/30 px-1.5 text-label font-strong text-warning">
                             {item.badge}
                           </span>
                         ) : null}

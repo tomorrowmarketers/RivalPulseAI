@@ -1,7 +1,7 @@
-﻿"""Link discovery service.
+"""Link discovery service.
 
 Given a seed URL this module:
-1. Deep-crawls the domain (BFS up to 60 pages) and extracts page metadata.
+1. Deep-crawls the domain (BFS until frontier exhaustion, unless configured) and extracts page metadata.
 2. Uses heuristics (or AI when available) to categorise into 3 buckets:
    san_pham (San pham) / khuyen_mai (Khuyen mai) / other (Khac)
 3. Optionally compares against known links stored in the DB to flag newly
@@ -14,10 +14,12 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Callable
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
-from competitor_intel.models import Competitor, DiscoveredLink, DiscoverySeed, Source
+from competitor_intel.config import settings
+from competitor_intel.models import Competitor, DiscoveredLink, DiscoverySeed, Source, SOURCE_TYPES
 from competitor_intel.services.ai import _request_openai_json, get_ai_runtime_status
 from competitor_intel.services.crawler import deep_discover_pages, discover_links
 from competitor_intel.services.notifications import write_notification
@@ -62,6 +64,7 @@ class CategorisedLink:
     link_text: str
     category: str
     ai_reason: str
+    source_type: str = "other"
     page_title: str | None = field(default=None)
 
 
@@ -70,6 +73,23 @@ def _compact_text(value: str, limit: int) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: max(0, limit - 3)].rstrip() + "..."
+
+
+_SOURCE_TYPE_RULES: list[tuple[str, list[str]]] = [
+    ("pricing_page", [r"/price", r"/gia\b", r"/hoc-phi", r"/bang-gia", r"/pricing", r"/tariff", r"/fee\b", r"hoc phi", r"bang gia"]),
+    ("promotion_page", [r"/khuyen-mai", r"/uu-dai", r"/sale\b", r"/offer", r"/giam-gia", r"/promotion", r"/deal\b", r"/discount", r"/scholarship", r"/hoc-bong", r"/voucher", r"khuyen mai", r"uu dai", r"giam gia", r"hoc bong"]),
+    ("course_page", [r"/course", r"/khoa-hoc", r"/chuong-trinh", r"/program", r"/study-program", r"/dao-tao", r"/training", r"/lop-hoc", r"/class\b", r"/curriculum", r"/bootcamp", r"/dang-ky", r"/tuyen-sinh", r"/admission", r"/enroll", r"/nhap-hoc", r"khoa hoc", r"chuong trinh", r"tuyen sinh", r"dang ky"]),
+    ("blog", [r"/blog", r"/tin-tuc", r"/news", r"/insights", r"/resources", r"/su-kien", r"/event", r"tin tuc", r"blog"]),
+    ("landing_page", [r"/landing", r"/lp/"]),
+]
+
+
+def _heuristic_source_type(url: str, text: str, title: str = "") -> str:
+    haystack = " ".join(part for part in (url, text or "", title or "") if part).lower()
+    for st, patterns in _SOURCE_TYPE_RULES:
+        if any(re.search(pat, haystack) for pat in patterns):
+            return st
+    return "other"
 
 
 def _heuristic_category(url: str, text: str, title: str = "") -> tuple[str, str, bool]:
@@ -84,22 +104,26 @@ def _heuristic_category(url: str, text: str, title: str = "") -> tuple[str, str,
             matches[cat] = matched_patterns
 
     if not matches:
-        return "other", "Chua du tin hieu de chot som", False
+        return "other", "Chưa đủ tín hiệu để chốt sớm", False
     if len(matches) == 1:
         cat, matched_patterns = next(iter(matches.items()))
-        return cat, f"Khop heuristic: {matched_patterns[0]}", True
-    return "other", "Tin hieu chong cheo, can AI quyet dinh", False
+        return cat, f"Khớp heuristic: {matched_patterns[0]}", True
+    return "other", "Tín hiệu chồng chéo, cần AI quyết định", False
 
 
 def _heuristic_result(link: dict) -> tuple[CategorisedLink, bool]:
     canonical_url = canonicalize_monitored_url(link["url"])
-    category, reason, confident = _heuristic_category(canonical_url, link.get("text", ""), link.get("title", ""))
+    text = link.get("text", "")
+    title = link.get("title", "")
+    category, reason, confident = _heuristic_category(canonical_url, text, title)
+    source_type = _heuristic_source_type(canonical_url, text, title)
     return (
         CategorisedLink(
             url=canonical_url,
-            link_text=link.get("text", ""),
+            link_text=text,
             category=category,
             ai_reason=reason,
+            source_type=source_type,
         ),
         confident,
     )
@@ -116,15 +140,23 @@ def _compact_link_for_ai(link: dict) -> dict[str, str]:
     return payload
 
 
+def _canonical_link_key(url: str) -> str:
+    canonical = canonicalize_monitored_url(url)
+    parts = urlsplit(canonical)
+    netloc = parts.netloc.lower().removeprefix("www.")
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+
+
 def _dedupe_categorised_links(items: list[CategorisedLink]) -> list[CategorisedLink]:
     seen: set[str] = set()
     unique: list[CategorisedLink] = []
     for item in items:
         url = canonicalize_monitored_url(item.url)
         item.url = url
-        if url in seen:
+        key = _canonical_link_key(url)
+        if key in seen:
             continue
-        seen.add(url)
+        seen.add(key)
         unique.append(item)
     return unique
 
@@ -137,9 +169,10 @@ def _source_lookup_by_canonical(db: Session, seed: DiscoverySeed) -> dict[str, S
     ).all()
     for source in sources:
         canonical = canonicalize_monitored_url(source.url)
-        current = lookup.get(canonical)
+        key = _canonical_link_key(canonical)
+        current = lookup.get(key)
         if current is None or (source.url == canonical and current.url != canonical):
-            lookup[canonical] = source
+            lookup[key] = source
     return lookup
 
 
@@ -179,10 +212,9 @@ def _ai_categorise_3(
         payload = _request_openai_json(
             model="gpt-4o-mini",
             instructions=(
-                "Classify each page URL into exactly one of 3 categories: "
-                "san_pham = product/course/pricing/enrollment pages, "
-                "khuyen_mai = promotion/discount/scholarship pages, "
-                "other = everything else. "
+                "For each page URL, return TWO labels: "
+                "1) category ∈ {san_pham (product/course/pricing/enrollment), khuyen_mai (promotion/discount/scholarship), other}; "
+                "2) source_type ∈ {course_page, pricing_page, promotion_page, landing_page, blog, other} — pick the SINGLE best fit from this fixed list, do NOT invent new types. "
                 "Return a JSON object with a 'links' array."
             ),
             user_input=json.dumps(
@@ -200,9 +232,10 @@ def _ai_categorise_3(
                             "properties": {
                                 "url": {"type": "string"},
                                 "category": {"type": "string", "enum": list(CATEGORIES.keys())},
+                                "source_type": {"type": "string", "enum": list(SOURCE_TYPES)},
                                 "reason": {"type": "string"},
                             },
-                            "required": ["url", "category", "reason"],
+                            "required": ["url", "category", "source_type", "reason"],
                             "additionalProperties": False,
                         },
                     }
@@ -215,13 +248,22 @@ def _ai_categorise_3(
         if progress:
             progress("AI tạm thời chưa sẵn sàng, hệ thống chuyển sang cách nhóm mặc định")
         return [heuristic_lookup[canonicalize_monitored_url(l["url"])] for l in links]
-    lookup = {item["url"]: (item["category"], item.get("reason", "")) for item in payload.get("links", [])}
+    lookup = {item["url"]: item for item in payload.get("links", [])}
     results: list[CategorisedLink] = []
     for l in links:
         canonical_url = canonicalize_monitored_url(l["url"])
         if canonical_url in lookup:
-            cat, reason = lookup[canonical_url]
-            results.append(CategorisedLink(url=canonical_url, link_text=l.get("text", ""), category=cat, ai_reason=reason))
+            ai_item = lookup[canonical_url]
+            ai_source_type = ai_item.get("source_type", "other")
+            if ai_source_type not in SOURCE_TYPES:
+                ai_source_type = heuristic_lookup[canonical_url].source_type
+            results.append(CategorisedLink(
+                url=canonical_url,
+                link_text=l.get("text", ""),
+                category=ai_item["category"],
+                ai_reason=ai_item.get("reason", ""),
+                source_type=ai_source_type,
+            ))
             continue
         results.append(heuristic_lookup[canonical_url])
     return results
@@ -237,12 +279,13 @@ def scan_and_categorise(seed_url: str, include_pattern: str | None = None) -> li
 
 def scan_and_categorise_deep(
     seed_url: str,
-    max_pages: int = 60,
+    max_pages: int | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> list[CategorisedLink]:
     if progress:
         progress(f"Bắt đầu quét từ trang gốc {seed_url}")
-    page_infos = deep_discover_pages(seed_url, max_pages=max_pages, progress=progress)
+    page_limit = settings.discovery_max_pages if max_pages is None else max_pages
+    page_infos = deep_discover_pages(seed_url, max_pages=page_limit, progress=progress)
     if not page_infos:
         if progress:
             progress("Không tìm thấy thêm trang nội bộ nào để theo dõi")
@@ -269,40 +312,52 @@ def scan_and_categorise_deep(
     return categorised
 
 
-def rescan_due_seeds(db: Session) -> int:
+def rescan_due_seeds(db: Session, seed_ids: list[str] | None = None, force: bool = False) -> int:
     now = datetime.now(UTC)
-    seeds = db.query(DiscoverySeed).filter(DiscoverySeed.is_active.is_(True)).all()
+    query = db.query(DiscoverySeed).filter(DiscoverySeed.is_active.is_(True))
+    if seed_ids:
+        query = query.filter(DiscoverySeed.id.in_(seed_ids))
+    seeds = query.all()
     new_link_count = 0
     for seed in seeds:
         due_at = (
             seed.last_scanned_at + timedelta(hours=seed.scan_frequency_hours)
             if seed.last_scanned_at else None
         )
-        if due_at and due_at > now:
+        if not force and due_at and due_at > now:
             continue
         try:
-            categorised = scan_and_categorise(seed.seed_url)
+            categorised = scan_and_categorise_deep(seed.seed_url)
         except Exception:
             continue
         existing_links_by_url = {
-            canonicalize_monitored_url(link.url): link
+            _canonical_link_key(link.url): link
             for link in db.query(DiscoveredLink).filter(DiscoveredLink.seed_id == seed.id).all()
         }
+        for link in existing_links_by_url.values():
+            link.is_new = False
+
         newly_added: list[DiscoveredLink] = []
         seen_in_batch: set[str] = set()
         for item in categorised:
             item.url = canonicalize_monitored_url(item.url)
-            existing_link = existing_links_by_url.get(item.url)
+            item_key = _canonical_link_key(item.url)
+            if item_key in seen_in_batch:
+                continue
+            seen_in_batch.add(item_key)
+            existing_link = existing_links_by_url.get(_canonical_link_key(item.url))
             if existing_link:
                 existing_link.last_seen_at = now
-                existing_link.is_new = False
+                existing_link.link_text = item.link_text or existing_link.link_text
+                existing_link.page_title = item.page_title or existing_link.page_title
+                existing_link.category = item.category or existing_link.category
+                existing_link.source_type = item.source_type or existing_link.source_type
+                existing_link.ai_reason = item.ai_reason or existing_link.ai_reason
                 continue
-            if item.url in seen_in_batch:
-                continue
-            seen_in_batch.add(item.url)
             new_link = DiscoveredLink(
                 tenant_id=seed.tenant_id, seed_id=seed.id, url=item.url,
                 link_text=item.link_text, category=item.category, ai_reason=item.ai_reason,
+                source_type=item.source_type,
                 page_title=item.page_title, status="pending", is_new=True,
                 first_seen_at=now, last_seen_at=now,
             )
@@ -310,15 +365,31 @@ def rescan_due_seeds(db: Session) -> int:
             newly_added.append(new_link)
         seed.last_scanned_at = now
         db.flush()
+        seed.pending_count = db.query(DiscoveredLink).filter(
+            DiscoveredLink.seed_id == seed.id, DiscoveredLink.status == "pending"
+        ).count()
         if newly_added:
             new_link_count += len(newly_added)
             if seed.auto_approve_new_links:
-                approve_links(db, seed, [l.id for l in newly_added],
-                              source_type=seed.auto_source_type or "other",
-                              crawl_frequency_hours=seed.auto_crawl_frequency_hours or 48)
-                action_label = "auto-approved"
+                allowed = list(seed.auto_approve_source_types or [])
+                if allowed:
+                    eligible = [l for l in newly_added if (l.source_type or "other") in allowed]
+                else:
+                    eligible = list(newly_added)
+                if eligible:
+                    for l in eligible:
+                        approve_links(
+                            db, seed, [l.id],
+                            source_type=l.source_type or "other",
+                            crawl_frequency_hours=seed.auto_crawl_frequency_hours or 48,
+                        )
+                    action_label = "auto-approved" if len(eligible) == len(newly_added) else "auto-approved-partial"
+                else:
+                    action_label = "pending"
+                seed.pending_count = db.query(DiscoveredLink).filter(
+                    DiscoveredLink.seed_id == seed.id, DiscoveredLink.status == "pending"
+                ).count()
             else:
-                seed.pending_count = db.query(DiscoveredLink).filter(DiscoveredLink.seed_id == seed.id, DiscoveredLink.status == "pending").count()
                 action_label = "pending"
             competitor = db.query(Competitor).filter(Competitor.id == seed.competitor_id).first()
             write_notification("new_links", {
@@ -341,7 +412,7 @@ def approve_links(db: Session, seed: DiscoverySeed, link_ids: list[str],
         if link is None or link.status == "approved":
             continue
         link.url = canonicalize_monitored_url(link.url)
-        existing = existing_sources.get(link.url)
+        existing = existing_sources.get(_canonical_link_key(link.url))
         if existing:
             link.status = "approved"
             link.source_id = existing.id
@@ -354,7 +425,7 @@ def approve_links(db: Session, seed: DiscoverySeed, link_ids: list[str],
         )
         db.add(src)
         db.flush()
-        existing_sources[link.url] = src
+        existing_sources[_canonical_link_key(link.url)] = src
         link.status = "approved"
         link.source_id = src.id
         created.append(src)
@@ -376,7 +447,7 @@ def finalize_seed_setup(db: Session, seed: DiscoverySeed, selected_ids: list[str
         if link.status == "approved" and link.source_id:
             continue
         link.url = canonicalize_monitored_url(link.url)
-        existing = existing_sources.get(link.url)
+        existing = existing_sources.get(_canonical_link_key(link.url))
         is_active = link.id in selected_set
         if existing:
             existing.is_active = is_active
@@ -391,7 +462,7 @@ def finalize_seed_setup(db: Session, seed: DiscoverySeed, selected_ids: list[str
             )
             db.add(src)
             db.flush()
-            existing_sources[link.url] = src
+            existing_sources[_canonical_link_key(link.url)] = src
             link.status = "approved" if is_active else "archived"
             link.source_id = src.id
         if is_active:

@@ -155,19 +155,16 @@ def serialize_event(event: Event) -> dict[str, Any]:
 
 
 def serialize_report_definition(defn: ReportDefinition, run_count: int = 0, last_run: Report | None = None) -> dict[str, Any]:
-    next_run_info = None
-    if last_run:
-        from datetime import timedelta
-        from datetime import date as _date
-        next_start = last_run.period_end + timedelta(days=1)
-        next_end = next_start + timedelta(days=defn.cadence_days - 1)
-        days_until = (next_end - _date.today()).days
-        next_run_info = {
-            "next_period_start": next_start.isoformat(),
-            "next_period_end": next_end.isoformat(),
-            "days_until_next": max(0, days_until),
-            "is_overdue": days_until < 0,
-        }
+    from competitor_intel.services.reports import next_report_window
+
+    window = next_report_window(last_run, defn.cadence_days)
+    next_run_info = {
+        "next_period_start": window["period_start"].isoformat(),
+        "next_period_end": window["period_end"].isoformat(),
+        "days_until_next": window["days_until_next"],
+        "is_overdue": window["is_overdue"],
+        "is_due": window["is_due"],
+    }
     return {
         "id": defn.id,
         "title": defn.title,

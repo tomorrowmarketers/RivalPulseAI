@@ -38,6 +38,13 @@ def _migrate_schema() -> None:
         conn.exec_driver_sql(
             "ALTER TABLE reports ADD COLUMN IF NOT EXISTS definition_id VARCHAR(36) REFERENCES report_definitions(id) ON DELETE SET NULL"
         )
+        # ── Phase 3: discovery seed/link source_type filtering ──────────────
+        conn.exec_driver_sql(
+            "ALTER TABLE discovery_seeds ADD COLUMN IF NOT EXISTS auto_approve_source_types JSON DEFAULT '[]'"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE discovered_links ADD COLUMN IF NOT EXISTS source_type VARCHAR(32) DEFAULT 'other'"
+        )
 
 
 def _migrate_data() -> None:

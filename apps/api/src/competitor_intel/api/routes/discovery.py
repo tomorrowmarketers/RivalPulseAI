@@ -46,6 +46,7 @@ def _serialize_link(link: DiscoveredLink) -> dict:
         "link_text": link.link_text,
         "page_title": link.page_title,
         "category": link.category,
+        "source_type": link.source_type,
         "ai_reason": link.ai_reason,
         "status": link.status,
         "is_new": link.is_new,
@@ -67,6 +68,7 @@ def _serialize_seed(seed: DiscoverySeed) -> dict:
         "is_active": seed.is_active,
         "auto_approve_new_links": seed.auto_approve_new_links,
         "auto_source_type": seed.auto_source_type,
+        "auto_approve_source_types": list(seed.auto_approve_source_types or []),
         "auto_crawl_frequency_hours": seed.auto_crawl_frequency_hours,
     }
 
@@ -82,6 +84,7 @@ def _group_categorised_links(categorised: list[CategorisedLink]) -> dict[str, li
             "url": item.url,
             "link_text": item.link_text,
             "page_title": item.page_title,
+            "source_type": item.source_type,
             "ai_reason": item.ai_reason,
             "category": item.category,
         })
@@ -102,7 +105,7 @@ def preview_links(
 ) -> dict:
     """Deep-crawl domain (BFS), run AI categorisation → return grouped preview."""
     try:
-        categorised = scan_and_categorise_deep(payload.seed_url, max_pages=60)
+        categorised = scan_and_categorise_deep(payload.seed_url)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Failed to fetch seed URL: {exc}")
 
@@ -129,7 +132,7 @@ def preview_links_stream(
 
     def worker() -> None:
         try:
-            categorised = scan_and_categorise_deep(seed_url, max_pages=60, progress=emit)
+            categorised = scan_and_categorise_deep(seed_url, progress=emit)
             grouped = _group_categorised_links(categorised)
             messages.put({
                 "type": "result",
@@ -226,12 +229,13 @@ def create_seed(
                 page_title=item.page_title,
                 category=item.category,
                 ai_reason=item.ai_reason,
+                source_type=item.source_type,
             )
             for item in payload.discovered_links
         ]
     else:
         try:
-            categorised = scan_and_categorise_deep(payload.seed_url, max_pages=60)
+            categorised = scan_and_categorise_deep(payload.seed_url)
         except Exception as exc:
             db.rollback()
             raise HTTPException(status_code=422, detail=f"Failed to fetch seed URL: {exc}")
@@ -256,6 +260,7 @@ def create_seed(
                 page_title=item.page_title,
                 category=item.category,
                 ai_reason=item.ai_reason,
+                source_type=item.source_type,
                 status="pending",
                 is_new=True,
                 first_seen_at=now,
@@ -398,7 +403,7 @@ def manual_rescan(
         raise HTTPException(status_code=404, detail="Seed not found")
     seed.last_scanned_at = None
     db.flush()
-    new_count = rescan_due_seeds(db)
+    new_count = rescan_due_seeds(db, seed_ids=[seed.id], force=True)
     return {"new_links_found": new_count}
 
 

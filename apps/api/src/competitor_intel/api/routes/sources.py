@@ -137,3 +137,17 @@ def update_source(
     db.commit()
     db.refresh(source)
     return {"item": serialize_source(source)}
+
+
+@router.delete("/{source_id}")
+def delete_source(
+    source_id: str,
+    user: User = Depends(require_api_role("admin")),
+    db: Session = Depends(get_db),
+) -> dict:
+    source = db.query(Source).filter(Source.id == source_id, Source.tenant_id == user.tenant_id).first()
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    db.delete(source)
+    db.commit()
+    return {"deleted": True, "id": source_id}

@@ -69,7 +69,7 @@ export function HistoryTab({ competitorId }: { competitorId: string }) {
             <div key={cat} className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 overflow-hidden">
               <div className="px-3 py-2 bg-surface-2/50 border-b border-[rgb(var(--border-line))] flex items-center gap-2">
                 <Badge tone={CAT_TONES[cat]}>{CAT_LABELS[cat]}</Badge>
-                <span className="text-tiny text-text-quaternary">{items.length} trang</span>
+                <span className="text-caption text-text-quaternary">{items.length} trang</span>
               </div>
               <ul className="divide-y divide-[rgb(var(--border-line))]">
                 {items.map((src) => {
@@ -85,7 +85,7 @@ export function HistoryTab({ competitorId }: { competitorId: string }) {
                       )}
                     >
                       <p className="text-caption font-emphasis text-text-primary truncate">{pathname}</p>
-                      <p className="text-tiny text-text-quaternary">{src.snapshot_count} phien ban</p>
+                      <p className="text-caption text-text-quaternary">{src.snapshot_count} phien ban</p>
                     </li>
                   );
                 })}
@@ -100,8 +100,8 @@ export function HistoryTab({ competitorId }: { competitorId: string }) {
           <div className="px-5 py-4 border-b border-[rgb(var(--border-line))] bg-surface-2/40">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-small font-emphasis text-text-primary truncate">{active.url}</p>
-                <p className="text-tiny text-text-quaternary mt-0.5">
+                <p className="text-caption font-emphasis text-text-primary truncate">{active.url}</p>
+                <p className="text-caption text-text-quaternary mt-0.5">
                   {active.snapshot_count} phien ban &middot; {active.is_active ? 'Dang theo doi' : 'Da luu tru'}
                 </p>
               </div>
@@ -145,7 +145,7 @@ export function HistoryTab({ competitorId }: { competitorId: string }) {
                       {snap.page_title && (
                         <p className="text-caption text-text-secondary mt-0.5">{snap.page_title}</p>
                       )}
-                      <p className="text-tiny text-text-quaternary mt-0.5 flex items-center gap-1">
+                      <p className="text-caption text-text-quaternary mt-0.5 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {new Date(snap.fetched_at).toLocaleString('vi-VN')}
                       </p>

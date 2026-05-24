@@ -13,7 +13,7 @@ const toneClasses: Record<Tone, string> = {
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: 'text-tiny px-1.5 py-0.5',
+  sm: 'text-label px-1.5 py-0.5',
   md: 'text-caption px-2 py-0.5',
 };
 

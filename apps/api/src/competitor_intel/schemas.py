@@ -53,6 +53,7 @@ class PreviewDiscoveredLink(BaseModel):
     page_title: str | None = None
     ai_reason: str = ""
     category: str = "other"
+    source_type: str = "other"
 
 
 class DiscoverySeedCreate(BaseModel):
@@ -71,6 +72,7 @@ class DiscoverySeedUpdate(BaseModel):
     scan_frequency_hours: int | None = None
     auto_approve_new_links: bool | None = None
     auto_source_type: str | None = None
+    auto_approve_source_types: list[str] | None = None
     auto_crawl_frequency_hours: int | None = None
     is_active: bool | None = None
 

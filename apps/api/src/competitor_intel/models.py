@@ -355,6 +355,9 @@ class DiscoverySeed(Base, TimestampMixin):
     auto_approve_new_links: Mapped[bool] = mapped_column(Boolean, default=False)
     # Default source_type and crawl frequency used when auto-approving
     auto_source_type: Mapped[str] = mapped_column(String(32), default="other")
+    # When auto_approve_new_links=True, only links whose AI-classified source_type is in
+    # this list get auto-approved; others stay pending. Empty/None = all types qualify.
+    auto_approve_source_types: Mapped[list] = mapped_column(JSON, default=list)
     auto_crawl_frequency_hours: Mapped[int] = mapped_column(Integer, default=48)
 
     competitor: Mapped["Competitor"] = relationship()
@@ -374,6 +377,8 @@ class DiscoveredLink(Base):
     link_text: Mapped[str | None] = mapped_column(Text)
     page_title: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str] = mapped_column(String(32), default="other")
+    # AI-classified source_type (course_page/pricing_page/promotion_page/landing_page/blog/other)
+    source_type: Mapped[str] = mapped_column(String(32), default="other")
     ai_reason: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="pending")
     # Whether this link appeared for the first time in the most recent scan

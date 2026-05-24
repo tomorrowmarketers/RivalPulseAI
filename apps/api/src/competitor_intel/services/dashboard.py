@@ -6,7 +6,8 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy.orm import Session, joinedload
 
 from competitor_intel.config import settings
-from competitor_intel.models import Competitor, Event, Report, Source
+from competitor_intel.models import Competitor, Event, Report, ReportDefinition, Source
+from competitor_intel.services.reports import next_report_window
 from competitor_intel.services.system_status import build_system_status
 
 
@@ -102,30 +103,47 @@ def build_dashboard_data(db: Session, tenant_id: str, days: int = 14) -> dict:
 
 
 def _build_report_schedule(db: Session, tenant_id: str) -> dict:
-    cadence_days = settings.report_cadence_days
     today = date.today()
-    last_report = (
-        db.query(Report)
-        .filter(Report.tenant_id == tenant_id)
-        .order_by(Report.period_end.desc())
-        .first()
+    active_defs = (
+        db.query(ReportDefinition)
+        .filter(ReportDefinition.tenant_id == tenant_id, ReportDefinition.is_active.is_(True))
+        .all()
     )
-    if last_report:
-        next_start = last_report.period_end + timedelta(days=1)
-        next_end = next_start + timedelta(days=cadence_days - 1)
-        days_until = (next_end - today).days
+    auto_defs = [definition for definition in active_defs if definition.auto_enabled]
+
+    selected_def = None
+    last_report = None
+    if auto_defs:
+        candidates = []
+        for definition in auto_defs:
+            last = (
+                db.query(Report)
+                .filter(Report.tenant_id == tenant_id, Report.definition_id == definition.id)
+                .order_by(Report.period_end.desc(), Report.created_at.desc())
+                .first()
+            )
+            window = next_report_window(last, definition.cadence_days, today=today)
+            candidates.append((window["period_end"], definition, last, window))
+        _, selected_def, last_report, window = sorted(candidates, key=lambda item: item[0])[0]
+        cadence_days = selected_def.cadence_days
     else:
-        next_start = today - timedelta(days=cadence_days - 1)
-        next_end = today
-        days_until = 0
+        cadence_days = settings.report_cadence_days
+        last_report = (
+            db.query(Report)
+            .filter(Report.tenant_id == tenant_id)
+            .order_by(Report.period_end.desc(), Report.created_at.desc())
+            .first()
+        )
+        window = next_report_window(last_report, cadence_days, today=today)
+
     return {
         "cadence_days": cadence_days,
-        "auto_enabled": settings.auto_report_enabled,
-        "email_enabled": settings.email_enabled,
+        "auto_enabled": settings.auto_report_enabled and (bool(auto_defs) or not active_defs),
+        "email_enabled": settings.email_enabled and (selected_def.email_enabled if selected_def else True),
         "last_report_end": last_report.period_end.isoformat() if last_report else None,
         "last_report_title": last_report.title if last_report else None,
         "last_report_id": last_report.id if last_report else None,
-        "next_report_end": next_end.isoformat(),
-        "days_until_next": max(0, days_until),
-        "is_overdue": days_until < 0,
+        "next_report_end": window["period_end"].isoformat(),
+        "days_until_next": window["days_until_next"],
+        "is_overdue": window["is_overdue"],
     }

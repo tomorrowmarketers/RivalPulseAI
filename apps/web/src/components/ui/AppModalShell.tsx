@@ -4,12 +4,13 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type Size = 'sm' | 'md' | 'lg';
+type Size = 'sm' | 'md' | 'lg' | 'xl';
 
 const sizeClasses: Record<Size, string> = {
   sm: 'max-w-md',
   md: 'max-w-xl',
   lg: 'max-w-3xl',
+  xl: 'max-w-6xl',
 };
 
 interface AppModalShellProps {
@@ -19,9 +20,11 @@ interface AppModalShellProps {
   size?: Size;
   footer?: React.ReactNode;
   children: React.ReactNode;
+  /** Lock the body height so content swaps don't resize the modal. */
+  fixedHeight?: boolean;
 }
 
-export function AppModalShell({ title, description, onClose, size = 'md', footer, children }: AppModalShellProps) {
+export function AppModalShell({ title, description, onClose, size = 'md', footer, children, fixedHeight }: AppModalShellProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -35,7 +38,7 @@ export function AppModalShell({ title, description, onClose, size = 'md', footer
       <div
         className={cn(
           'flex w-full flex-col overflow-hidden rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-popover',
-          'max-h-[90vh]',
+          fixedHeight ? 'h-[88vh]' : 'max-h-[90vh]',
           sizeClasses[size],
         )}
         onClick={(e) => e.stopPropagation()}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from reportlab.lib.pagesizes import A4
@@ -25,6 +25,25 @@ class ReportArtifacts:
 
 def _date_label(period_start: date, period_end: date) -> str:
     return f"{period_start.isoformat()} to {period_end.isoformat()}"
+
+
+def next_report_window(last_report: Report | None, cadence_days: int, today: date | None = None) -> dict:
+    cadence_days = max(1, int(cadence_days or 1))
+    today = today or date.today()
+    if last_report is not None:
+        period_start = last_report.period_end + timedelta(days=1)
+        period_end = period_start + timedelta(days=cadence_days - 1)
+    else:
+        period_end = today
+        period_start = period_end - timedelta(days=cadence_days - 1)
+    days_until = (period_end - today).days
+    return {
+        "period_start": period_start,
+        "period_end": period_end,
+        "days_until_next": max(0, days_until),
+        "is_due": days_until <= 0,
+        "is_overdue": days_until < 0,
+    }
 
 
 def _render_report_html(report: Report, events: list[Event]) -> str:

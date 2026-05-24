@@ -19,6 +19,7 @@ export type Seed = {
   is_active: boolean;
   auto_approve_new_links: boolean;
   auto_source_type: string;
+  auto_approve_source_types?: string[];
   auto_crawl_frequency_hours: number;
 };
 

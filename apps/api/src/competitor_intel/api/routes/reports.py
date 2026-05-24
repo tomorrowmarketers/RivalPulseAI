@@ -19,7 +19,7 @@ from competitor_intel.schemas import (
 )
 from competitor_intel.services.adhoc_report import build_adhoc_report
 from competitor_intel.services.notifications import write_notification
-from competitor_intel.services.reports import generate_report
+from competitor_intel.services.reports import generate_report, next_report_window
 
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -59,29 +59,52 @@ def _def_summary(defn: ReportDefinition, db: Session) -> dict:
 @router.get("/schedule")
 def report_schedule(user: User = Depends(get_api_user), db: Session = Depends(get_db)) -> dict:
     """Return scheduling metadata: cadence, last report, next expected report date."""
-    cadence_days = settings.report_cadence_days
     today = date.today()
-
-    last_report = (
-        db.query(Report)
-        .filter(Report.tenant_id == user.tenant_id)
-        .order_by(Report.period_end.desc())
-        .first()
+    active_definition_count = db.query(func.count(ReportDefinition.id)).filter(
+        ReportDefinition.tenant_id == user.tenant_id,
+        ReportDefinition.is_active.is_(True),
+    ).scalar() or 0
+    active_defs = (
+        db.query(ReportDefinition)
+        .filter(
+            ReportDefinition.tenant_id == user.tenant_id,
+            ReportDefinition.is_active.is_(True),
+            ReportDefinition.auto_enabled.is_(True),
+        )
+        .all()
     )
 
-    if last_report:
-        next_report_start = last_report.period_end + timedelta(days=1)
-        next_report_end = next_report_start + timedelta(days=cadence_days - 1)
-        days_until_next = (next_report_end - today).days
+    selected_def = None
+    selected_window = None
+    last_report = None
+    if active_defs:
+        candidates = []
+        for defn in active_defs:
+            last = (
+                db.query(Report)
+                .filter(Report.tenant_id == user.tenant_id, Report.definition_id == defn.id)
+                .order_by(Report.period_end.desc(), Report.created_at.desc())
+                .first()
+            )
+            window = next_report_window(last, defn.cadence_days, today=today)
+            candidates.append((window["period_end"], defn, last, window))
+        _, selected_def, last_report, selected_window = sorted(candidates, key=lambda item: item[0])[0]
+        cadence_days = selected_def.cadence_days
     else:
-        next_report_start = today - timedelta(days=cadence_days - 1)
-        next_report_end = today
-        days_until_next = 0
+        cadence_days = settings.report_cadence_days
+        last_report = (
+            db.query(Report)
+            .filter(Report.tenant_id == user.tenant_id)
+            .order_by(Report.period_end.desc(), Report.created_at.desc())
+            .first()
+        )
+        selected_window = next_report_window(last_report, cadence_days, today=today)
 
     return {
         "cadence_days": cadence_days,
         "auto_report_enabled": settings.auto_report_enabled,
-        "email_enabled": settings.email_enabled,
+        "auto_enabled": settings.auto_report_enabled and (bool(active_defs) or active_definition_count == 0),
+        "email_enabled": settings.email_enabled and (selected_def.email_enabled if selected_def else True),
         "email_recipients": [r.strip() for r in settings.report_email_recipients.split(",") if r.strip()],
         "last_report": {
             "id": last_report.id,
@@ -89,10 +112,10 @@ def report_schedule(user: User = Depends(get_api_user), db: Session = Depends(ge
             "period_end": last_report.period_end.isoformat(),
             "status": last_report.status,
         } if last_report else None,
-        "next_report_start": next_report_start.isoformat(),
-        "next_report_end": next_report_end.isoformat(),
-        "days_until_next": max(0, days_until_next),
-        "is_overdue": days_until_next < 0,
+        "next_report_start": selected_window["period_start"].isoformat(),
+        "next_report_end": selected_window["period_end"].isoformat(),
+        "days_until_next": selected_window["days_until_next"],
+        "is_overdue": selected_window["is_overdue"],
     }
 
 

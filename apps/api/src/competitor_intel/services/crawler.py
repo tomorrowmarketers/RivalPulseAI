@@ -100,10 +100,13 @@ class PageInfo:
 
 
 def _fetch_page_info(url: str, link_text: str) -> tuple["PageInfo | None", list[dict[str, str]]]:
-    """Lightweight fetch — returns PageInfo + list of internal links."""
-    base_domain = urlparse(url).netloc
+    """Lightweight fetch - returns PageInfo + list of internal links."""
     headers = {"User-Agent": settings.crawl_user_agent}
-    timeout = httpx.Timeout(8.0)
+    timeout = httpx.Timeout(settings.discovery_timeout_seconds)
+
+    def _strip_www(netloc: str) -> str:
+        return netloc.lower().removeprefix("www.")
+
     try:
         with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
             response = client.get(url)
@@ -116,16 +119,20 @@ def _fetch_page_info(url: str, link_text: str) -> tuple["PageInfo | None", list[
         title = normalize_text(soup.title.text) if soup.title and soup.title.text else None
         meta = soup.find("meta", attrs={"name": "description"})
         meta_desc = normalize_text(meta.get("content", "")) if meta and meta.get("content") else None
-        effective_domain = urlparse(str(response.url)).netloc.lower()
+        effective_host = _strip_www(urlparse(str(response.url)).netloc)
         links: list[dict[str, str]] = []
         for a in soup.find_all("a", href=True):
-            href = canonicalize_monitored_url(urljoin(str(response.url), a["href"]))
+            raw_href = (a.get("href") or "").strip()
+            if not raw_href or raw_href.lower().startswith(("mailto:", "tel:", "javascript:")):
+                continue
+            href = canonicalize_monitored_url(urljoin(str(response.url), raw_href))
             parsed = urlparse(href)
-            if (parsed.netloc.lower() == effective_domain
-                    and parsed.scheme in ("http", "https")
-                    and not href.lower().startswith(("mailto:", "tel:", "javascript:"))):
-                text = normalize_text(a.get_text(" ")) or ""
-                links.append({"url": href, "text": text})
+            if parsed.scheme not in ("http", "https"):
+                continue
+            if _strip_www(parsed.netloc) != effective_host:
+                continue
+            text = normalize_text(a.get_text(" ")) or ""
+            links.append({"url": href, "text": text})
         info = PageInfo(
             url=canonicalize_monitored_url(str(response.url)),
             link_text=link_text,
@@ -139,66 +146,81 @@ def _fetch_page_info(url: str, link_text: str) -> tuple["PageInfo | None", list[
 
 def deep_discover_pages(
     seed_url: str,
-    max_pages: int = 60,
+    max_pages: int | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> list["PageInfo"]:
-    """BFS from *seed_url*: fetch seed page then follow every internal link
-    (and their links) until *max_pages* unique pages are collected.
+    """BFS from *seed_url* and follow internal links until the frontier is exhausted.
 
-    Pages are fetched concurrently in batches of 10.
-    Returns a list of PageInfo with page titles and meta descriptions.
+    Pass a positive *max_pages* to cap the crawl. None/0 means no page-count cap.
+    Pages are fetched concurrently in batches controlled by DISCOVERY_BATCH_SIZE.
     """
     normalized_seed_url = canonicalize_monitored_url(seed_url)
-    base_domain = urlparse(normalized_seed_url).netloc.lower()
+    base_host = urlparse(normalized_seed_url).netloc.lower().removeprefix("www.")
+    page_limit = max_pages if max_pages and max_pages > 0 else None
+    batch_size = max(1, settings.discovery_batch_size)
+
+    def _strip_www(netloc: str) -> str:
+        return netloc.lower().removeprefix("www.")
 
     def _norm(u: str) -> str:
-        return canonicalize_monitored_url(u)
+        c = canonicalize_monitored_url(u)
+        p = urlparse(c)
+        if p.netloc.startswith("www."):
+            c = c.replace(f"://{p.netloc}", f"://{p.netloc[4:]}", 1)
+        return c
 
     def _is_internal(href: str) -> bool:
         p = urlparse(href)
         return (
             p.scheme in ("http", "https", "")
-            and (not p.netloc or p.netloc.lower() == base_domain)
+            and (not p.netloc or _strip_www(p.netloc) == base_host)
             and not href.lower().startswith(("mailto:", "tel:", "javascript:"))
         )
 
-    visited: set[str] = set()
-    queue: list[tuple[str, str]] = [(normalized_seed_url, "")]  # (url, link_text)
-    visited.add(_norm(normalized_seed_url))
+    visited: set[str] = {_norm(normalized_seed_url)}
+    queue: list[tuple[str, str]] = [(normalized_seed_url, "")]
     results: list[PageInfo] = []
     batch_index = 0
 
-    while queue and len(results) < max_pages:
+    while queue and (page_limit is None or len(results) < page_limit):
+        current_batch_size = batch_size
+        if page_limit is not None:
+            remaining = page_limit - len(results)
+            if remaining <= 0:
+                break
+            current_batch_size = min(current_batch_size, remaining)
+
         batch: list[tuple[str, str]] = []
-        while queue and len(batch) < 10:
+        while queue and len(batch) < current_batch_size:
             batch.append(queue.pop(0))
+        if not batch:
+            break
+
         batch_index += 1
         if progress:
             progress(f"Đang mở nhóm trang {batch_index} và tìm thêm liên kết nội bộ")
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=current_batch_size) as executor:
             futures = {executor.submit(_fetch_page_info, u, t): (u, t) for u, t in batch}
             for future in as_completed(futures):
                 try:
                     info, new_links = future.result()
-                    if info:
+                    if info and (page_limit is None or len(results) < page_limit):
                         results.append(info)
                         if progress:
                             label = info.page_title or info.url
                             progress(f"Đã đọc {len(results)} trang: {label}")
-                        for lnk in new_links:
-                            href = lnk["url"]
-                            norm = _norm(href)
-                            if norm not in visited and _is_internal(href) and not is_noise_url(href):
-                                visited.add(norm)
-                                if len(results) + len(queue) < max_pages * 3:
-                                    queue.append((href, lnk["text"]))
+                    for lnk in new_links:
+                        href = lnk["url"]
+                        norm = _norm(href)
+                        if norm in visited or not _is_internal(href) or is_noise_url(href):
+                            continue
+                        visited.add(norm)
+                        if page_limit is None or len(results) + len(queue) < page_limit * 3:
+                            queue.append((href, lnk["text"]))
                 except Exception:
                     pass
-        if len(results) >= max_pages:
-            break
 
-    # Deduplicate by final URL (redirects can produce duplicate info.url values)
     seen_final: set[str] = set()
     deduped: list[PageInfo] = []
     for r in results:
@@ -208,7 +230,7 @@ def deep_discover_pages(
             deduped.append(r)
     if progress:
         progress(f"Đã gom {len(deduped)} trang duy nhất từ domain")
-    return deduped[:max_pages]
+    return deduped if page_limit is None else deduped[:page_limit]
 
 
 def discover_links(seed_url: str, include_pattern: str | None = None) -> list[dict[str, str]]:

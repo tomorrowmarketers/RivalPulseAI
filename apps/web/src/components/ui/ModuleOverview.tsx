@@ -45,7 +45,7 @@ export function ModuleOverview({ icon: Icon, kicker, title, description, badges 
                 {badges.map((badge) => (
                   <span
                     key={badge}
-                    className="inline-flex items-center rounded-full border border-brand/15 bg-brand/5 px-2 py-0.5 text-tiny font-emphasis text-brand"
+                    className="inline-flex items-center rounded-full border border-brand/15 bg-brand/5 px-2 py-0.5 text-label font-emphasis text-brand"
                   >
                     {badge}
                   </span>

@@ -77,7 +77,7 @@ export function SignalsTab({ competitor }: Props) {
     <div className="flex flex-col gap-6">
       {/* Summary bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-h3 font-strong text-text-primary tabular-nums">{events.length}</span>
+        <span className="text-caption font-strong text-text-primary tabular-nums">{events.length}</span>
         <span className="text-caption text-text-secondary">tín hiệu ghi nhận</span>
         <span className="text-caption text-text-quaternary">·</span>
         {(Object.entries(byUrgency) as [keyof typeof URGENCY_META, EventItem[]][]).map(([u, evs]) =>

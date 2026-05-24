@@ -27,6 +27,9 @@ class Settings:
 
     crawl_user_agent: str = os.getenv("CRAWL_USER_AGENT", "RivalPulseAI-Competitor-Intel/1.0")
     crawl_timeout_seconds: int = int(os.getenv("CRAWL_TIMEOUT_SECONDS", "25"))
+    discovery_timeout_seconds: int = int(os.getenv("DISCOVERY_TIMEOUT_SECONDS", "8"))
+    discovery_batch_size: int = int(os.getenv("DISCOVERY_BATCH_SIZE", "10"))
+    discovery_max_pages: int = int(os.getenv("DISCOVERY_MAX_PAGES", "0"))
     crawl_poll_interval_seconds: int = int(os.getenv("CRAWL_POLL_INTERVAL_SECONDS", "20"))
     scheduler_interval_seconds: int = int(os.getenv("SCHEDULER_INTERVAL_SECONDS", "60"))
     sync_manual_crawls: bool = _as_bool(os.getenv("SYNC_MANUAL_CRAWLS"), True)

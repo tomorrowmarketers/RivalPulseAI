@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import {
-  Activity, ArrowLeft, ChevronDown, ChevronUp, Globe, Loader2,
-  Pencil, Play, Rss, Settings,
+  Activity, ArrowLeft, Globe, Loader2,
+  Pencil, Play, Settings,
 } from 'lucide-react';
 import { AppModalShell } from '@/components/ui/AppModalShell';
 import { Badge } from '@/components/ui/Badge';
@@ -20,29 +20,27 @@ import { cn } from '@/lib/utils';
 
 import { OverviewTab } from './OverviewTab';
 import { SourcesTab } from './SourcesTab';
-import { SignalsTab } from './SignalsTab';
 import { TechTab } from './TechTab';
 import { HistoryTab } from './HistoryTab';
 import { Competitor, DetailTab, Seed, Source, TechSubTab } from './_shared';
 
-type PrimaryTab = Exclude<DetailTab, 'tech' | 'history'>;
+type PrimaryTab = 'overview' | 'sources';
 type UtilityView = Extract<DetailTab, 'tech' | 'history'>;
 
-const PRIMARY_TAB_KEYS: PrimaryTab[] = ['overview', 'sources', 'signals'];
+const PRIMARY_TAB_KEYS: PrimaryTab[] = ['overview', 'sources'];
 
 const PRIMARY_TAB_DEFS: { key: PrimaryTab; label: string; icon: React.ReactNode }[] = [
-  { key: 'overview', label: 'Tổng quan', icon: <Activity className="h-3.5 w-3.5" /> },
+  { key: 'overview', label: 'Tổng quan & Tín hiệu', icon: <Activity className="h-3.5 w-3.5" /> },
   { key: 'sources',  label: 'Nguồn & URL', icon: <Globe className="h-3.5 w-3.5" /> },
-  { key: 'signals',  label: 'Tín hiệu', icon: <Rss className="h-3.5 w-3.5" /> },
 ];
 
 const UTILITY_TAB_DEFS: { key: UtilityView; label: string; icon: React.ReactNode }[] = [
-  { key: 'tech', label: 'Kỹ thuật', icon: <Settings className="h-3.5 w-3.5" /> },
-  { key: 'history', label: 'Lịch sử', icon: <Activity className="h-3.5 w-3.5" /> },
+  { key: 'tech', label: 'Crawl', icon: <Settings className="h-3.5 w-3.5" /> },
+  { key: 'history', label: 'Bản chụp', icon: <Activity className="h-3.5 w-3.5" /> },
 ];
 
 function isValidPrimaryTab(t: string | null): t is PrimaryTab {
-  return Boolean(t) && (PRIMARY_TAB_KEYS as string[]).includes(t!);
+  return t === 'overview' || t === 'sources';
 }
 
 function isUtilityView(t: string | null): t is UtilityView {
@@ -84,7 +82,6 @@ export default function CompetitorDetailPage() {
   const [error, setError] = useState('');
 
   const [editOpen, setEditOpen] = useState(false);
-  const [showInfo, setShowInfo] = useState(true);
 
   const loadAll = useCallback(async () => {
     try {
@@ -142,6 +139,10 @@ export default function CompetitorDetailPage() {
       setUtilityView(next);
       return;
     }
+    if (next === 'signals') {
+      setTab('overview');
+      return;
+    }
     setTab(next);
   }
 
@@ -191,11 +192,11 @@ export default function CompetitorDetailPage() {
       {/* Header card */}
       <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-hover text-small font-strong text-white shadow-linear-sm">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand to-brand-hover text-caption font-strong text-white shadow-linear-sm">
             {getInitials(competitor.name)}
           </div>
           <div className="min-w-0">
-            <h1 className="text-h1 font-emphasis text-text-primary truncate">{competitor.name}</h1>
+            <h1 className="text-caption font-emphasis text-text-primary truncate">{competitor.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <a
                 href={`https://${competitor.primary_domain}`}
@@ -238,30 +239,6 @@ export default function CompetitorDetailPage() {
         </div>
       </header>
 
-      {/* Help / context line (collapsible) */}
-      <div className="mb-4 rounded-lg border border-[rgb(var(--border-line))] bg-surface-1">
-        <button
-          type="button"
-          onClick={() => setShowInfo((v) => !v)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left"
-        >
-          <p className="text-caption text-text-tertiary">
-            <span className="text-text-secondary font-emphasis">Quy trình đề xuất:</span>{' '}
-            Tổng quan → Nguồn & URL → Tín hiệu → (Kỹ thuật khi cần debug)
-          </p>
-          {showInfo
-            ? <ChevronUp className="h-4 w-4 text-text-quaternary flex-shrink-0" />
-            : <ChevronDown className="h-4 w-4 text-text-quaternary flex-shrink-0" />}
-        </button>
-        {showInfo && (
-          <div className="px-4 pb-3 text-caption text-text-tertiary leading-relaxed">
-            Bắt đầu ở Tổng quan để xem tình trạng crawl, vào Nguồn & URL để chỉnh độ phủ,
-            và Tín hiệu để duyệt các thay đổi AI đã tóm tắt. Kỹ thuật và Lịch sử được gom
-            vào modal riêng để thanh điều hướng chính gọn hơn.
-          </div>
-        )}
-      </div>
-
       {/* Tab nav */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[rgb(var(--border-line))]">
         <div className="flex flex-wrap">
@@ -280,7 +257,7 @@ export default function CompetitorDetailPage() {
               {t.icon}
               <span>{t.label}</span>
               {t.key === 'sources' && pendingTotal > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-warning/15 border border-warning/30 px-1.5 text-tiny font-strong text-warning">
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-warning/15 border border-warning/30 px-1.5 text-caption font-strong text-warning">
                   {pendingTotal}
                 </span>
               )}
@@ -314,9 +291,6 @@ export default function CompetitorDetailPage() {
           isAdmin={isAdmin}
           onRefresh={loadAll}
         />
-      )}
-      {tab === 'signals' && (
-        <SignalsTab competitor={competitor} />
       )}
       {utilityView && (
         <DetailUtilityModal
@@ -364,9 +338,10 @@ function DetailUtilityModal({
   return (
     <AppModalShell
       title="Kỹ thuật & lịch sử"
-      description="Nhóm các màn hình phụ vào một modal để phần detail chính tập trung hơn vào nguồn và tín hiệu."
+      description="Quản lý lịch crawl và xem các bản chụp đã lưu."
       onClose={onClose}
-      size="lg"
+      size="xl"
+      fixedHeight
     >
       <div className="flex flex-col gap-4">
         <div className="flex gap-1 rounded-lg border border-[rgb(var(--border-line))] bg-surface-1 p-1 self-start">

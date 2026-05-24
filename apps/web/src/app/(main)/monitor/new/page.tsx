@@ -5,7 +5,8 @@ import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, CheckCircle2, CheckSquare, Clock3, ExternalLink, Globe, Loader2, Search, Sparkles, Square,
+  ArrowLeft, CheckCircle2, CheckSquare, ChevronDown, ChevronUp, Clock3, ExternalLink, Globe,
+  Loader2, Search, Settings2, Sparkles, Square,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -64,8 +65,9 @@ function buildSeedUrl(domain: string) {
 }
 
 function discoveryStreamUrl(seedUrl: string) {
+  // Use same origin so the request goes through Nginx/Next.js proxy (/api/* rewrite)
   const base = process.env.NEXT_PUBLIC_API_ORIGIN
-    || `${window.location.protocol}//${window.location.hostname}:8410`;
+    || `${window.location.protocol}//${window.location.host}`;
   return `${base}/api/discovery/preview-stream?seed_url=${encodeURIComponent(seedUrl)}`;
 }
 
@@ -277,277 +279,300 @@ export default function NewCompetitorPage() {
   const actionLabel = busy ? 'Đang lưu...' : `Bắt đầu theo dõi (${selected.size} trang)`;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-5 text-caption xl:px-8">
-      <Link href="/monitor" className="inline-flex items-center gap-1.5 text-caption font-emphasis text-text-tertiary hover:text-brand transition-colors mb-4">
-        <ArrowLeft className="h-4 w-4" /> Quay lại danh sách đối thủ
+    <div className="w-full px-4 py-5 text-caption xl:px-8">
+      <Link href="/monitor" className="inline-flex items-center gap-1.5 text-caption font-emphasis text-text-tertiary hover:text-brand transition-colors mb-5">
+        <ArrowLeft className="h-4 w-4" /> Quay lại
       </Link>
-      <header className="mb-4 space-y-1">
-        <p className="text-caption font-emphasis uppercase tracking-[0.16em] text-text-tertiary">Thiết lập pipeline theo dõi</p>
-        <h1 className="text-caption font-emphasis text-text-primary">Thêm đối thủ mới</h1>
-        <p className="max-w-3xl text-caption text-text-tertiary">Nhập domain, theo dõi tiến trình quét theo thời gian thực, rồi chốt nguồn và lịch crawl tự động ngay trong cùng một màn.</p>
-      </header>
-      {error && <div className="mb-5 rounded-md border border-danger/20 bg-danger/5 px-3 py-2.5 text-caption text-danger">{error}</div>}
 
-      <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="space-y-4 lg:sticky lg:top-6 self-start">
-          <PipelinePanel
-            activeIndex={currentStage}
-            busy={busy}
-            step={step}
-            totalFound={totalFound}
-            selectedCount={selected.size}
-          />
+      {error && (
+        <div className="mb-4 rounded-md border border-danger/20 bg-danger/5 px-3 py-2.5 text-caption text-danger">{error}</div>
+      )}
 
-          <SchedulePanel
-            discoveryHours={schedule.discoveryHours}
-            crawlHours={schedule.crawlHours}
-            disabled={busy}
-            onDiscoveryChange={(hours) => setSchedule((prev) => ({ ...prev, discoveryHours: hours }))}
-            onCrawlChange={(hours) => setSchedule((prev) => ({ ...prev, crawlHours: hours }))}
-          />
+      {/* ── STEP 1: form ── */}
+      {step === 'info' && !busy && (
+        <div className="w-full">
+          <StepProgressBar activeIndex={0} />
 
-          {step === 'select' && (
-            <div className="hidden rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm lg:block">
-              <p className="text-caption font-emphasis text-text-primary">Tạo pipeline theo dõi</p>
-              <p className="mt-1 text-caption text-text-tertiary">Nguồn đã chọn sẽ crawl lại mỗi {formatHoursLabel(schedule.crawlHours)}. Hệ thống cũng quét link mới mỗi {formatHoursLabel(schedule.discoveryHours)}.</p>
-              <Button className="mt-3 w-full" size="sm" variant="primary" onClick={handleFinalize} disabled={busy || selected.size === 0}>
-                {actionLabel}
-              </Button>
-            </div>
-          )}
-        </aside>
-
-        <section className="min-w-0">
-          {step === 'info' && !busy && (
-            <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm sm:p-5">
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3 border-b border-[rgb(var(--border-line))] pb-4">
-                <div>
-                  <p className="text-caption font-emphasis text-text-primary">1. Nhập thông tin đầu vào</p>
-                  <p className="mt-1 text-caption text-text-tertiary">Pipeline sẽ chạy theo 4 bước cố định: quét link, nhóm bằng AI, chọn nguồn và chốt lịch crawl.</p>
-                </div>
-                <div className="rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/40 px-3 py-2">
-                  <p className="text-caption font-emphasis text-text-secondary">Lịch hiện tại</p>
-                  <p className="mt-1 text-caption text-text-tertiary">Quét link mới {formatHoursLabel(schedule.discoveryHours)} · Crawl lại {formatHoursLabel(schedule.crawlHours)}</p>
-                </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px]">
+            {/* Left: main form */}
+            <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm">
+              <div className="px-5 pt-5 pb-4 border-b border-[rgb(var(--border-line))]">
+                <h1 className="text-caption font-emphasis text-text-primary">Thêm đối thủ mới</h1>
+                <p className="mt-0.5 text-caption text-text-tertiary">Nhập thông tin cơ bản để pipeline tự động quét và nhóm các trang quan trọng.</p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Tên đối thủ" required>
-                  <Input size="sm" autoFocus value={info.name} onChange={(e) => setInfo({ ...info, name: e.target.value })} placeholder="Ví dụ: Đối thủ A" onKeyDown={(e) => e.key === 'Enter' && handleStartScan()} />
-                </Field>
+              <div className="p-5 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Tên đối thủ" required>
+                    <Input
+                      size="sm"
+                      autoFocus
+                      value={info.name}
+                      onChange={(e) => setInfo({ ...info, name: e.target.value })}
+                      placeholder="Ví dụ: MindX Education"
+                      onKeyDown={(e) => e.key === 'Enter' && handleStartScan()}
+                    />
+                  </Field>
 
-                <Field label="Domain chính" required hint="Không cần https://, chỉ cần tên miền.">
-                  <div className="relative">
-                    <Globe className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-quaternary" />
-                    <Input size="sm" value={info.primary_domain} onChange={(e) => setInfo({ ...info, primary_domain: e.target.value })} placeholder="mindx.edu.vn" className="pl-7" onKeyDown={(e) => e.key === 'Enter' && handleStartScan()} />
-                  </div>
-                </Field>
-
-                <div className="md:col-span-2">
-                  <Field label="Phân khúc thị trường" hint="Chọn một tag cố định để AI hiểu ngữ cảnh và dữ liệu luôn đồng nhất.">
-                    <SegmentTagPicker value={info.segment} onChange={(segment) => setInfo({ ...info, segment })} disabled={busy} />
+                  <Field label="Domain chính" required>
+                    <div className="relative">
+                      <Globe className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-quaternary pointer-events-none" />
+                      <Input
+                        size="sm"
+                        value={info.primary_domain}
+                        onChange={(e) => setInfo({ ...info, primary_domain: e.target.value })}
+                        placeholder="mindx.edu.vn"
+                        className="pl-7"
+                        onKeyDown={(e) => e.key === 'Enter' && handleStartScan()}
+                      />
+                    </div>
+                    <p className="text-caption text-text-quaternary">Không cần nhập https://</p>
                   </Field>
                 </div>
+
+                <Field label="Phân khúc thị trường">
+                  <SegmentTagPicker value={info.segment} onChange={(segment) => setInfo({ ...info, segment })} disabled={busy} />
+                </Field>
               </div>
 
-              <div className="mt-4 flex justify-end">
-                <Button size="sm" variant="primary" onClick={handleStartScan} disabled={!info.name.trim() || !info.primary_domain.trim()}>
+              <div className="px-5 pb-5 flex items-center justify-between gap-3">
+                <p className="text-caption text-text-quaternary">
+                  Crawl mỗi {formatHoursLabel(schedule.discoveryHours)} · nội dung mỗi {formatHoursLabel(schedule.crawlHours)}
+                </p>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={handleStartScan}
+                  disabled={!info.name.trim() || !info.primary_domain.trim()}
+                >
                   Bắt đầu quét →
                 </Button>
               </div>
             </div>
-          )}
 
-          {step === 'info' && busy && (
-            <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm sm:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[rgb(var(--border-line))] pb-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="rounded-lg bg-brand/10 p-2 text-brand">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="break-words text-caption font-emphasis text-text-primary">{busyLabel}</p>
-                    <p className="mt-1 max-w-2xl text-caption text-text-tertiary">Pipeline đang mở trang gốc, lần theo liên kết nội bộ, rồi chuyển sang AI nhóm nguồn. Nhật ký được giữ trong khung riêng để màn hình không bị kéo dài thêm.</p>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/40 px-3 py-2">
-                  <p className="text-caption font-emphasis text-text-secondary">Bản ghi gần nhất</p>
-                  <p className="mt-1 text-caption text-text-tertiary">{progressLogs.length} dòng nhật ký</p>
-                </div>
-              </div>
+            {/* Right: schedule + pipeline preview */}
+            <div className="flex flex-col gap-3">
+              <ScheduleAccordion
+                discoveryHours={schedule.discoveryHours}
+                crawlHours={schedule.crawlHours}
+                disabled={false}
+                onDiscoveryChange={(hours) => setSchedule((prev) => ({ ...prev, discoveryHours: hours }))}
+                onCrawlChange={(hours) => setSchedule((prev) => ({ ...prev, crawlHours: hours }))}
+              />
 
-              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px]">
-                <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-2/30 p-4">
-                  <p className="mb-3 text-caption font-emphasis text-text-secondary">Nhật ký pipeline</p>
-                  <div className="max-h-[320px] overflow-y-auto pr-1">
-                    <div className="flex flex-col gap-2">
-                      {progressLogs.map((log, index) => (
-                        <div key={`${index}-${log}`} className={cn('flex items-start gap-2 text-caption', index === progressLogs.length - 1 ? 'text-text-primary' : 'text-text-tertiary')}>
-                          <span className={cn('mt-1.5 inline-block h-1.5 w-1.5 rounded-full', index === progressLogs.length - 1 ? 'bg-brand' : 'bg-text-quaternary')} />
-                          <span className="break-words leading-5">{log}</span>
+              {/* Pipeline preview card */}
+              <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm p-4">
+                <p className="text-caption font-emphasis text-text-secondary mb-3">Pipeline tự động</p>
+                <ol className="space-y-3">
+                  {PIPELINE_STEPS.map((s, i) => {
+                    const Icon = s.icon;
+                    return (
+                      <li key={s.label} className="flex items-start gap-2.5">
+                        <span className={cn('mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-emphasis', i === 0 ? 'bg-brand/15 text-brand' : 'bg-surface-2 text-text-quaternary')}>
+                          <Icon className="h-2.5 w-2.5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className={cn('text-caption font-emphasis', i === 0 ? 'text-text-primary' : 'text-text-secondary')}>{s.label}</p>
+                          <p className="text-caption text-text-quaternary">{s.description}</p>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 self-start">
-                  <MetricCard label="Domain đang quét" value={previewSeedUrl} />
-                  <MetricCard label="Quét link mới" value={formatHoursLabel(schedule.discoveryHours)} />
-                  <MetricCard label="Crawl lại nội dung" value={formatHoursLabel(schedule.crawlHours)} />
-                </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {step === 'select' && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-caption font-emphasis text-text-primary">4. Xác nhận nguồn cần theo dõi</p>
-                    <p className="mt-1 text-caption text-text-tertiary">Tìm thấy {totalFound} trang. Nút tạo và lịch crawl giờ luôn nằm cố định ở khung bên cạnh để không phải cuộn xuống cuối mới bấm tiếp.</p>
-                  </div>
-                  <div className="rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/40 px-3 py-2">
-                    <p className="text-caption font-emphasis text-text-secondary">Đã chọn</p>
-                    <p className="mt-1 text-caption text-text-tertiary">{selected.size}/{totalFound} trang · Crawl lại {formatHoursLabel(schedule.crawlHours)}</p>
-                  </div>
+      {/* ── STEP 1: scanning ── */}
+      {step === 'info' && busy && (
+        <div className="w-full">
+          <StepProgressBar activeIndex={currentStage} busy />
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px]">
+            {/* Left: progress log */}
+            <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </span>
+                <div>
+                  <p className="text-caption font-emphasis text-text-primary">{busyLabel}</p>
+                  <p className="text-caption text-text-tertiary">{previewSeedUrl}</p>
                 </div>
               </div>
 
-              <div className="space-y-3 pb-20 lg:pb-4">
-                {CATEGORIES.map((cat) => {
-                  const links = grouped[cat] ?? [];
-                  if (!links.length) return null;
-                  const selCount = links.filter((link) => selected.has(link.url)).length;
-                  const allSel = selCount === links.length;
+              <div className="rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/30 p-3 max-h-[400px] overflow-y-auto">
+                {progressLogs.length === 0 ? (
+                  <p className="text-caption text-text-quaternary italic">Đang khởi động...</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {progressLogs.map((log, index) => {
+                      const isLast = index === progressLogs.length - 1;
+                      return (
+                        <div key={`${index}-${log}`} className={cn('flex items-start gap-2 text-caption', isLast ? 'text-text-primary' : 'text-text-quaternary')}>
+                          <span className={cn('mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full', isLast ? 'bg-brand' : 'bg-border-line')} />
+                          <span className="break-words leading-5">{log}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
 
+            {/* Right: pipeline steps progress */}
+            <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm p-4">
+              <p className="text-caption font-emphasis text-text-secondary mb-3">Pipeline đang chạy</p>
+              <ol className="space-y-3">
+                {PIPELINE_STEPS.map((s, i) => {
+                  const Icon = s.icon;
+                  const done = i < currentStage;
+                  const active = i === currentStage;
+                  const loading = busy && active;
                   return (
-                    <div key={cat} className="overflow-hidden rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgb(var(--border-line))] bg-surface-2/50 px-4 py-3">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                          <Badge tone={CATEGORY_TONES[cat]}>{CATEGORY_LABELS[cat]}</Badge>
-                          <span className="text-caption text-text-tertiary">{links.length} trang</span>
-                          <span className="hidden text-caption text-text-quaternary sm:inline">— {CATEGORY_DESCRIPTION[cat]}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-caption font-emphasis text-text-secondary">{selCount}/{links.length}</span>
-                          <button onClick={() => (allSel ? deselectAll(cat) : selectAll(cat))} className="text-caption font-emphasis text-brand transition-colors hover:text-brand/80">
-                            {allSel ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                          </button>
-                        </div>
+                    <li key={s.label} className="flex items-start gap-2.5">
+                      <span className={cn('mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full', done ? 'bg-brand/15 text-brand' : active ? 'bg-brand/15 text-brand' : 'bg-surface-2 text-text-quaternary')}>
+                        {done ? <CheckCircle2 className="h-2.5 w-2.5" /> : loading ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Icon className="h-2.5 w-2.5" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={cn('text-caption font-emphasis', done || active ? 'text-text-primary' : 'text-text-quaternary')}>{s.label}</p>
+                        <p className="text-caption text-text-quaternary">{s.description}</p>
                       </div>
-
-                      <ul className="divide-y divide-[rgb(var(--border-line))]">
-                        {links.map((link) => {
-                          const checked = selected.has(link.url);
-                          return (
-                            <li key={link.url} onClick={() => toggleLink(link.url)} className={cn('flex cursor-pointer items-start gap-3 px-4 py-3 transition-colors', checked ? 'bg-brand/3 hover:bg-brand/5' : 'hover:bg-surface-2/40')}>
-                              <div className="mt-0.5 flex-shrink-0">
-                                {checked ? <CheckSquare className="h-4 w-4 text-brand" /> : <Square className="h-4 w-4 text-text-quaternary" />}
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                {link.page_title && <p className="text-caption font-emphasis text-text-primary leading-5">{link.page_title}</p>}
-                                <p className={cn('break-all text-caption text-text-tertiary', !link.page_title && 'font-emphasis text-text-primary')}>{link.url}</p>
-                                {link.ai_reason && <p className="mt-1 text-caption italic text-text-tertiary">{link.ai_reason}</p>}
-                              </div>
-
-                              <a href={link.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-0.5 flex-shrink-0 text-text-quaternary transition-colors hover:text-brand">
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
+                    </li>
                   );
                 })}
-              </div>
+              </ol>
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="sticky bottom-4 z-10 lg:hidden">
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-[rgb(var(--border-line))] bg-surface-1/95 px-4 py-3 shadow-linear-sm backdrop-blur">
-                  <div className="min-w-0">
-                    <p className="text-caption font-emphasis text-text-primary">Đã chọn {selected.size}/{totalFound} trang</p>
-                    <p className="truncate text-caption text-text-tertiary">Quét link mới {formatHoursLabel(schedule.discoveryHours)} · Crawl lại {formatHoursLabel(schedule.crawlHours)}</p>
-                  </div>
-                  <Button className="shrink-0" size="sm" variant="primary" onClick={handleFinalize} disabled={busy || selected.size === 0}>
+      {/* ── STEP 2: source selection ── */}
+      {step === 'select' && (
+        <div>
+          {/* Sticky action bar */}
+          <div className="sticky top-0 z-20 -mx-4 xl:-mx-8 mb-4">
+            <div className="border-b border-[rgb(var(--border-line))] bg-surface-1/95 px-4 py-3 backdrop-blur xl:px-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <StepProgressBar activeIndex={3} inline />
+                  <span className="hidden sm:block h-4 w-px bg-[rgb(var(--border-line))]" />
+                  <span className="text-caption text-text-tertiary">
+                    Tìm thấy <strong className="text-text-primary">{totalFound}</strong> trang
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-caption text-text-secondary">
+                    Đã chọn <strong className={cn(selected.size === 0 ? 'text-text-quaternary' : 'text-brand')}>{selected.size}</strong>/{totalFound}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={handleFinalize}
+                    disabled={busy || selected.size === 0}
+                  >
                     {actionLabel}
                   </Button>
                 </div>
               </div>
             </div>
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}
+          </div>
 
-function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode; }) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-caption font-emphasis text-text-primary flex items-center gap-1.5">
-        {label}{required && <span className="text-danger">*</span>}
-      </label>
-      {children}
-      {hint && <p className="text-caption text-text-tertiary">{hint}</p>}
-    </div>
-  );
-}
+          {/* Schedule summary row */}
+          <div className="mb-3 flex items-center gap-2 px-1">
+            <Clock3 className="h-3.5 w-3.5 text-text-quaternary shrink-0" />
+            <span className="text-caption text-text-tertiary">
+              Quét link mới mỗi <strong className="text-text-secondary">{formatHoursLabel(schedule.discoveryHours)}</strong>
+              {' · '}Crawl lại mỗi <strong className="text-text-secondary">{formatHoursLabel(schedule.crawlHours)}</strong>
+            </span>
+          </div>
 
-function PipelinePanel({
-  activeIndex,
-  busy,
-  step,
-  totalFound,
-  selectedCount,
-}: {
-  activeIndex: number;
-  busy: boolean;
-  step: 'info' | 'select';
-  totalFound: number;
-  selectedCount: number;
-}) {
-  return (
-    <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm">
-      <p className="text-caption font-emphasis text-text-primary">Pipeline thiết lập</p>
-      <p className="mt-1 text-caption text-text-tertiary">Luồng được chia thành 4 bước rõ ràng để dễ theo dõi tiến trình và tránh mất nút hành động khỏi màn hình.</p>
+          {/* Category sections */}
+          <div className="space-y-2 pb-6">
+            {CATEGORIES.map((cat) => {
+              const links = grouped[cat] ?? [];
+              if (!links.length) return null;
+              return (
+                <CategorySection
+                  key={cat}
+                  cat={cat}
+                  links={links}
+                  selected={selected}
+                  onToggle={toggleLink}
+                  onSelectAll={() => selectAll(cat)}
+                  onDeselectAll={() => deselectAll(cat)}
+                />
+              );
+            })}
+          </div>
 
-      <div className="mt-4 flex flex-col gap-2.5">
-        {PIPELINE_STEPS.map((item, index) => {
-          const Icon = item.icon;
-          const done = index < activeIndex;
-          const active = index === activeIndex;
-          const loading = busy && active && step === 'info';
-
-          return (
-            <div key={item.label} className={cn('rounded-lg border px-3 py-3', done ? 'border-brand/30 bg-brand/5' : active ? 'border-brand/40 bg-brand/6' : 'border-[rgb(var(--border-line))] bg-surface-2/40')}>
-              <div className="flex items-start gap-2.5">
-                <span className={cn('mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full', done || active ? 'bg-brand/10 text-brand' : 'bg-surface-1 text-text-quaternary')}>
-                  {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
-                </span>
-
-                <div className="min-w-0">
-                  <p className="text-caption font-emphasis text-text-primary">{index + 1}. {item.label}</p>
-                  <p className="mt-1 text-caption text-text-tertiary">{item.description}</p>
-                </div>
-              </div>
+          {/* Mobile sticky bottom bar — only shown on truly small screens where top bar wraps */}
+          <div className="fixed bottom-0 left-0 right-0 z-30 sm:hidden border-t border-[rgb(var(--border-line))] bg-surface-1/95 px-4 py-3 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-caption text-text-secondary">
+                <strong className={cn(selected.size === 0 ? 'text-text-quaternary' : 'text-brand')}>{selected.size}</strong>/{totalFound} trang đã chọn
+              </p>
+              <Button size="sm" variant="primary" onClick={handleFinalize} disabled={busy || selected.size === 0}>
+                {actionLabel}
+              </Button>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4 rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/40 px-3 py-3">
-        <p className="text-caption font-emphasis text-text-secondary">Tóm tắt nhanh</p>
-        <p className="mt-1 text-caption text-text-tertiary">{step === 'select' ? `Đã tìm thấy ${totalFound} trang và đang chọn ${selectedCount} trang để theo dõi.` : 'Chưa tạo nguồn nào, đang chờ bạn nhập domain để khởi chạy pipeline.'}</p>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function SchedulePanel({
+/** Horizontal step progress bar */
+function StepProgressBar({ activeIndex, busy, inline }: { activeIndex: number; busy?: boolean; inline?: boolean }) {
+  if (inline) {
+    const step = PIPELINE_STEPS[activeIndex];
+    const Icon = step?.icon ?? CheckCircle2;
+    return (
+      <div className="flex items-center gap-1.5 text-caption font-emphasis text-brand">
+        <Icon className="h-3.5 w-3.5" />
+        <span>{step?.label}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1">
+      {PIPELINE_STEPS.map((step, index) => {
+        const Icon = step.icon;
+        const done = index < activeIndex;
+        const active = index === activeIndex;
+        const loading = busy && active;
+        return (
+          <div key={step.label} className="flex items-center gap-1 flex-1 min-w-0">
+            <div className={cn(
+              'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-emphasis transition-colors',
+              done ? 'bg-brand/10 text-brand' : active ? 'bg-brand/10 text-brand' : 'bg-surface-2 text-text-quaternary',
+            )}>
+              {done ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0" />
+              ) : loading ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              ) : (
+                <Icon className="h-3 w-3 shrink-0" />
+              )}
+              <span className={cn('truncate', index > 0 && !active && !done && 'hidden sm:inline')}>
+                {step.label}
+              </span>
+            </div>
+            {index < PIPELINE_STEPS.length - 1 && (
+              <div className={cn('h-px flex-1 transition-colors', done ? 'bg-brand/30' : 'bg-[rgb(var(--border-line))]')} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Collapsible schedule accordion inside the form */
+function ScheduleAccordion({
   discoveryHours,
   crawlHours,
   disabled,
@@ -560,50 +585,162 @@ function SchedulePanel({
   onDiscoveryChange: (hours: number) => void;
   onCrawlChange: (hours: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 p-4 shadow-linear-sm">
-      <p className="text-caption font-emphasis text-text-primary">Lịch crawl tự động</p>
-      <p className="mt-1 text-caption text-text-tertiary">Thiết lập ngay từ màn này thay vì để hệ thống âm thầm dùng lịch mặc định.</p>
+    <div className="rounded-lg border border-[rgb(var(--border-line))] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-caption font-emphasis text-text-secondary hover:bg-surface-2/40 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-3.5 w-3.5 text-text-quaternary" />
+          <span>Lịch crawl tự động</span>
+          <span className="font-normal text-text-quaternary">
+            — {formatHoursLabel(discoveryHours)} · {formatHoursLabel(crawlHours)}
+          </span>
+        </div>
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-text-quaternary" /> : <ChevronDown className="h-3.5 w-3.5 text-text-quaternary" />}
+      </button>
 
-      <div className="mt-4 space-y-4">
-        <ScheduleSelector
-          label="Quét link mới"
-          description="Kiểm tra lại domain để phát hiện URL mới hoặc menu mới."
-          value={discoveryHours}
-          disabled={disabled}
-          onChange={onDiscoveryChange}
-        />
+      {open && (
+        <div className="border-t border-[rgb(var(--border-line))] bg-surface-2/20 px-3 py-3 grid gap-4 sm:grid-cols-2">
+          <ScheduleSelector label="Quét link mới" value={discoveryHours} disabled={disabled} onChange={onDiscoveryChange} />
+          <ScheduleSelector label="Crawl lại nội dung" value={crawlHours} disabled={disabled} onChange={onCrawlChange} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-        <ScheduleSelector
-          label="Crawl lại trang đã chọn"
-          description="Lấy lại nội dung của các URL bạn đã duyệt để phát hiện thay đổi."
-          value={crawlHours}
-          disabled={disabled}
-          onChange={onCrawlChange}
-        />
+/** Collapsible category section in step 2 */
+function CategorySection({
+  cat,
+  links,
+  selected,
+  onToggle,
+  onSelectAll,
+  onDeselectAll,
+}: {
+  cat: Category;
+  links: DiscoveredLink[];
+  selected: Set<string>;
+  onToggle: (url: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const selCount = links.filter((link) => selected.has(link.url)).length;
+  const allSel = selCount === links.length;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[rgb(var(--border-line))] bg-surface-1 shadow-linear-sm">
+      {/* Category header */}
+      <div className="flex items-center gap-3 border-b border-[rgb(var(--border-line))] bg-surface-2/50 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left"
+        >
+          {collapsed ? <ChevronDown className="h-3.5 w-3.5 text-text-quaternary shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 text-text-quaternary shrink-0" />}
+          <Badge tone={CATEGORY_TONES[cat]} size="md">{CATEGORY_LABELS[cat]}</Badge>
+          <span className="text-caption text-text-tertiary">{links.length} trang</span>
+          <span className="hidden text-caption text-text-quaternary sm:inline truncate">— {CATEGORY_DESCRIPTION[cat]}</span>
+        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className={cn('text-caption font-emphasis tabular-nums', selCount > 0 ? 'text-brand' : 'text-text-quaternary')}>
+            {selCount}/{links.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => (allSel ? onDeselectAll() : onSelectAll())}
+            className="text-caption font-emphasis text-brand hover:text-brand/70 transition-colors"
+          >
+            {allSel ? 'Bỏ tất cả' : 'Chọn tất cả'}
+          </button>
+        </div>
       </div>
+
+      {/* URL list */}
+      {!collapsed && (
+        <ul className="divide-y divide-[rgb(var(--border-line))]">
+          {links.map((link) => {
+            const checked = selected.has(link.url);
+            return (
+              <li
+                key={link.url}
+                onClick={() => onToggle(link.url)}
+                className={cn(
+                  'flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors',
+                  checked ? 'bg-brand/3 hover:bg-brand/5' : 'hover:bg-surface-2/40',
+                )}
+              >
+                <div className="shrink-0">
+                  {checked
+                    ? <CheckSquare className="h-4 w-4 text-brand" />
+                    : <Square className="h-4 w-4 text-text-quaternary" />}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  {link.page_title
+                    ? (
+                      <>
+                        <p className="text-caption font-emphasis text-text-primary truncate leading-5">{link.page_title}</p>
+                        <p className="text-caption text-text-quaternary truncate">{link.url}</p>
+                      </>
+                    )
+                    : <p className="text-caption font-emphasis text-text-primary truncate">{link.url}</p>
+                  }
+                  {link.ai_reason && (
+                    <p className="text-caption italic text-text-quaternary truncate">{link.ai_reason}</p>
+                  )}
+                </div>
+
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="shrink-0 text-text-quaternary hover:text-brand transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-caption font-emphasis text-text-primary flex items-center gap-1">
+        {label}{required && <span className="text-danger">*</span>}
+      </label>
+      {children}
     </div>
   );
 }
 
 function ScheduleSelector({
   label,
-  description,
   value,
   disabled,
   onChange,
 }: {
   label: string;
-  description: string;
   value: number;
   disabled: boolean;
   onChange: (hours: number) => void;
 }) {
   return (
     <div>
-      <p className="text-caption font-emphasis text-text-primary">{label}</p>
-      <p className="mt-1 text-caption text-text-tertiary">{description}</p>
-      <div className="mt-2 grid grid-cols-3 gap-2">
+      <p className="mb-2 text-caption font-emphasis text-text-secondary">{label}</p>
+      <div className="grid grid-cols-3 gap-1.5">
         {SCHEDULE_OPTIONS.map((hours) => {
           const active = value === hours;
           return (
@@ -619,15 +756,6 @@ function ScheduleSelector({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: string; }) {
-  return (
-    <div className="rounded-lg border border-[rgb(var(--border-line))] bg-surface-2/40 px-3 py-3">
-      <p className="text-caption font-emphasis text-text-secondary">{label}</p>
-      <p className="mt-1 break-words text-caption text-text-primary">{value}</p>
     </div>
   );
 }

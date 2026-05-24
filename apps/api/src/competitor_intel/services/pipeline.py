@@ -42,7 +42,7 @@ def _select_primary_event(candidates: list[ClassifiedEvent]) -> ClassifiedEvent 
         impact_score=primary.impact_score,
         urgency=primary.urgency,
         is_report_worthy=primary.is_report_worthy,
-        rationale=f"{primary.rationale}. Gop {len(candidates)} tin hieu cung URL va giu muc co tac dong cao nhat.",
+        rationale=f"{primary.rationale}. Gộp {len(candidates)} tín hiệu cùng URL và giữ mức có tác động cao nhất.",
     )
 
 
@@ -134,6 +134,14 @@ def run_crawl_job(db: Session, job: CrawlJob, already_claimed: bool = False) -> 
         def _strip_nul(s: str | None) -> str | None:
             return s.replace("\x00", "") if s else s
 
+        def _strip_nul_seq(lst: list | None) -> list | None:
+            if lst is None:
+                return None
+            return [s.replace("\x00", "") if isinstance(s, str) else s for s in lst]
+
+        # Capture started_at now before any potential session invalidation
+        job_started_at = job.started_at
+
         raw_html_path = write_text(f"raw-html/{source.id}/{job.id}.html", result.raw_html)
         snapshot = PageSnapshot(
             tenant_id=source.tenant_id,
@@ -147,8 +155,8 @@ def run_crawl_job(db: Session, job: CrawlJob, already_claimed: bool = False) -> 
             canonical_url=_strip_nul(result.canonical_url),
             raw_html_object_key=raw_html_path,
             extracted_text=_strip_nul(result.extracted_text),
-            extracted_blocks=result.extracted_blocks,
-            extracted_links=result.extracted_links,
+            extracted_blocks=_strip_nul_seq(result.extracted_blocks),
+            extracted_links=_strip_nul_seq(result.extracted_links),
             content_hash=result.content_hash,
             metadata_json=result.metadata_json,
         )
@@ -180,7 +188,7 @@ def run_crawl_job(db: Session, job: CrawlJob, already_claimed: bool = False) -> 
         except Exception as emb_exc:
             _log("warning", f"Embedding index skipped: {emb_exc}")
 
-        duration = (datetime.now(UTC) - job.started_at).total_seconds()
+        duration = (datetime.now(UTC) - job_started_at).total_seconds()
         _log("info", f"Done in {duration:.1f}s")
 
         job.status = "succeeded"
@@ -193,12 +201,19 @@ def run_crawl_job(db: Session, job: CrawlJob, already_claimed: bool = False) -> 
         db.flush()
         return job
     except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         _log("error", str(exc))
-        job.status = "failed"
-        job.error_message = str(exc)
-        job.finished_at = datetime.now(UTC)
-        job.log_lines = logs
-        db.flush()
+        try:
+            job.status = "failed"
+            job.error_message = str(exc)
+            job.finished_at = datetime.now(UTC)
+            job.log_lines = logs
+            db.flush()
+        except Exception:
+            pass
         return job
 
 
@@ -269,38 +284,45 @@ def create_events_from_diff(db: Session, source: Source, diff: DiffRecord) -> li
 
     events: list[Event] = []
     classified_batch = classify_market_change(competitor, source, diff)
-    classified = _select_primary_event(classified_batch.events)
-    if classified is None:
+
+    # Deduplicate by event_type — keep highest impact_score per type
+    seen_types: dict[str, ClassifiedEvent] = {}
+    for ce in classified_batch.events:
+        if ce.event_type not in seen_types or ce.impact_score > seen_types[ce.event_type].impact_score:
+            seen_types[ce.event_type] = ce
+
+    if not seen_types:
         return events
 
-    event = Event(
-        tenant_id=source.tenant_id,
-        competitor_id=competitor.id,
-        source_id=source.id,
-        diff_record_id=diff.id,
-        event_type=classified.event_type,
-        title=classified.title,
-        summary=classified.summary,
-        evidence_excerpt=classified.evidence_excerpt,
-        source_url=source.url,
-        confidence_score=classified.confidence_score,
-        impact_score=classified.impact_score,
-        urgency=classified.urgency,
-        is_report_worthy=classified.is_report_worthy,
-        ai_rationale=classified.rationale,
-        prompt_version=classified_batch.prompt_version,
-    )
-    db.add(event)
-    db.flush()
-    db.add(
-        AuditLog(
+    for classified in seen_types.values():
+        event = Event(
             tenant_id=source.tenant_id,
-            entity_type="event",
-            entity_id=event.id,
-            action="event_created",
-            changes={"event_type": event.event_type, "source_url": event.source_url},
+            competitor_id=competitor.id,
+            source_id=source.id,
+            diff_record_id=diff.id,
+            event_type=classified.event_type,
+            title=classified.title,
+            summary=classified.summary,
+            evidence_excerpt=classified.evidence_excerpt,
+            source_url=source.url,
+            confidence_score=classified.confidence_score,
+            impact_score=classified.impact_score,
+            urgency=classified.urgency,
+            is_report_worthy=classified.is_report_worthy,
+            ai_rationale=classified.rationale,
+            prompt_version=classified_batch.prompt_version,
         )
-    )
-    events.append(event)
-    db.flush()
+        db.add(event)
+        db.flush()
+        db.add(
+            AuditLog(
+                tenant_id=source.tenant_id,
+                entity_type="event",
+                entity_id=event.id,
+                action="event_created",
+                changes={"event_type": event.event_type, "source_url": event.source_url},
+            )
+        )
+        events.append(event)
+        db.flush()
     return events
